@@ -34,6 +34,8 @@ import {
   ensureNetwork,
   ensureRunning,
   runInstance,
+  stopInstance,
+  upgradeInstance,
   removeInstance as removeInstanceContainer,
   instanceRuntime,
   triggerWechat,
@@ -264,7 +266,7 @@ app.post('/api/admin/instances/:id/rename', async (req, reply) => {
   }
 });
 
-// 启动/重启实例容器（仅管理员）：容器停止或被删后，一键拉起（不重建数据卷）。
+// 启动实例容器（仅管理员）：容器停止或被删后，一键拉起（不重建数据卷）。
 app.post('/api/admin/instances/:id/start', async (req, reply) => {
   if (!requireAdmin(req, reply)) return;
   const inst = findInstance((req.params as any).id);
@@ -274,6 +276,46 @@ app.post('/api/admin/instances/:id/start', async (req, reply) => {
     return { ok: true };
   } catch (e: any) {
     return reply.code(500).send({ error: '启动失败：' + (e?.message || e) });
+  }
+});
+
+// 停止实例容器（仅管理员）：保留容器与数据卷。
+app.post('/api/admin/instances/:id/stop', async (req, reply) => {
+  if (!requireAdmin(req, reply)) return;
+  const inst = findInstance((req.params as any).id);
+  if (!inst) return reply.code(404).send({ error: '实例不存在' });
+  try {
+    await stopInstance(inst);
+    return { ok: true };
+  } catch (e: any) {
+    return reply.code(500).send({ error: '停止失败：' + (e?.message || e) });
+  }
+});
+
+// 重启实例容器（仅管理员）：按当前本地镜像重建（保留数据卷 → 登录态不丢；快速，不联网拉取）。
+app.post('/api/admin/instances/:id/restart', async (req, reply) => {
+  if (!requireAdmin(req, reply)) return;
+  const inst = findInstance((req.params as any).id);
+  if (!inst) return reply.code(404).send({ error: '实例不存在' });
+  try {
+    await runInstance(inst);
+    return { ok: true };
+  } catch (e: any) {
+    return reply.code(500).send({ error: '重启失败：' + (e?.message || e) });
+  }
+});
+
+// 升级实例（仅管理员）：拉取最新微信镜像后重建（保留数据卷）。用于把旧实例更新到新版镜像
+// （如修复"最小化丢失"等），类似「更新微信」但更新的是实例容器镜像本身。
+app.post('/api/admin/instances/:id/upgrade', async (req, reply) => {
+  if (!requireAdmin(req, reply)) return;
+  const inst = findInstance((req.params as any).id);
+  if (!inst) return reply.code(404).send({ error: '实例不存在' });
+  try {
+    await upgradeInstance(inst);
+    return { ok: true };
+  } catch (e: any) {
+    return reply.code(500).send({ error: '升级失败：' + (e?.message || e) });
   }
 });
 

@@ -27,7 +27,14 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
   const [resetTarget, setResetTarget] = useState<PanelUser | null>(null); // 重置密码弹窗
   const [deleteInst, setDeleteInst] = useState<InstanceWithStatus | null>(null); // 删除实例弹窗
   const [renameInst, setRenameInst] = useState<InstanceWithStatus | null>(null); // 重命名实例弹窗
-  const [starting, setStarting] = useState<Set<string>>(new Set());
+  const [acting, setActing] = useState<Record<string, string>>({}); // 实例 id → 进行中的动作文案（启动中/升级中…）
+  const setAct = (id: string, label: string | null) =>
+    setActing((a) => {
+      const n = { ...a };
+      if (label) n[id] = label;
+      else delete n[id];
+      return n;
+    });
 
   const subs = users.filter((u) => u.role !== 'admin');
   const timer = useRef<number | undefined>(undefined);
@@ -72,7 +79,7 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
   };
 
   const start = async (inst: InstanceWithStatus) => {
-    setStarting((s) => new Set(s).add(inst.id));
+    setAct(inst.id, '启动中…');
     try {
       await api.instanceStart(inst.id);
       toast('实例已启动', 'ok');
@@ -80,11 +87,22 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
     } catch (e: any) {
       toast(e.message || '启动失败', 'error');
     } finally {
-      setStarting((s) => {
-        const n = new Set(s);
-        n.delete(inst.id);
-        return n;
-      });
+      setAct(inst.id, null);
+    }
+  };
+
+  const lifecycle = async (inst: InstanceWithStatus, kind: 'stop' | 'restart' | 'upgrade') => {
+    const label = kind === 'stop' ? '停止中…' : kind === 'upgrade' ? '升级中…' : '重启中…';
+    setAct(inst.id, label);
+    if (kind === 'upgrade') toast('正在升级实例：拉取最新镜像并重建，可能需要几分钟，请勿离开…', 'info');
+    try {
+      await (kind === 'stop' ? api.instanceStop(inst.id) : kind === 'upgrade' ? api.instanceUpgrade(inst.id) : api.instanceRestart(inst.id));
+      toast(kind === 'stop' ? '已停止' : kind === 'upgrade' ? '已升级到最新镜像并重启' : '已重启', 'ok');
+      await load();
+    } catch (e: any) {
+      toast(e.message || '操作失败', 'error');
+    } finally {
+      setAct(inst.id, null);
     }
   };
 
@@ -143,10 +161,13 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
                     key={inst.id}
                     inst={inst}
                     userCount={usersForInstance(inst.id).length}
-                    starting={starting.has(inst.id)}
+                    acting={acting[inst.id]}
                     onEnter={() => nav(`/i/${inst.id}`)}
                     onTrigger={trigger}
                     onStart={() => start(inst)}
+                    onStop={() => lifecycle(inst, 'stop')}
+                    onRestart={() => lifecycle(inst, 'restart')}
+                    onUpgrade={() => lifecycle(inst, 'upgrade')}
                     onRename={() => setRenameInst(inst)}
                     onAssign={() => setAssignInst(inst)}
                     onDelete={() => setDeleteInst(inst)}
@@ -428,20 +449,26 @@ function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
 function InstanceAdminCard({
   inst,
   userCount,
-  starting,
+  acting,
   onEnter,
   onTrigger,
   onStart,
+  onStop,
+  onRestart,
+  onUpgrade,
   onRename,
   onAssign,
   onDelete,
 }: {
   inst: InstanceWithStatus;
   userCount: number;
-  starting?: boolean;
+  acting?: string;
   onEnter: () => void;
   onTrigger: (inst: InstanceWithStatus, kind: 'install' | 'update') => void;
   onStart: () => void;
+  onStop: () => void;
+  onRestart: () => void;
+  onUpgrade: () => void;
   onRename: () => void;
   onAssign: () => void;
   onDelete: () => void;
@@ -450,15 +477,18 @@ function InstanceAdminCard({
   const busy = BUSY_PHASES.includes(wx.phase);
   const installed = wx.installed && wx.phase !== 'downloading';
   const offline = inst.runtime !== 'running';
+  const working = !!acting || busy; // 生命周期操作中 或 微信下载/更新中 → 锁住卡片
 
   let badge: { text: string; cls: string };
-  if (offline) badge = { text: inst.runtime === 'missing' ? '未创建' : '已停止', cls: 'tag-off' };
+  if (acting) badge = { text: '处理中', cls: 'tag-busy' };
+  else if (offline) badge = { text: inst.runtime === 'missing' ? '未创建' : '已停止', cls: 'tag-off' };
   else if (busy) badge = { text: '处理中', cls: 'tag-busy' };
   else if (installed) badge = { text: '在线', cls: 'tag-on' };
   else badge = { text: '待安装', cls: 'tag-warn' };
 
   let sub: string;
-  if (busy) sub = wx.percent >= 0 ? `${wx.message || '处理中'} ${wx.percent}%` : wx.message || '请稍候…';
+  if (acting) sub = acting;
+  else if (busy) sub = wx.percent >= 0 ? `${wx.message || '处理中'} ${wx.percent}%` : wx.message || '请稍候…';
   else if (wx.phase === 'error') sub = wx.message || '操作失败，可重试';
   else if (offline) sub = inst.runtime === 'missing' ? '容器尚未创建' : '容器已停止';
   else if (installed) sub = wx.version ? `微信 ${wx.version}` : '微信已安装';
@@ -471,48 +501,65 @@ function InstanceAdminCard({
         <span className={'tag ' + badge.cls}>{badge.text}</span>
       </div>
       <div className="inst-sub">
-        {sub} · 可访问 {userCount} 人
+        {sub}
+        {!acting && ` · 可访问 ${userCount} 人`}
       </div>
 
-      {busy && (
+      {working && (
         <div className="wx-progress">
           <div
-            className={'wx-progress-bar' + (wx.percent < 0 ? ' indeterminate' : '')}
-            style={wx.percent >= 0 ? { width: `${wx.percent}%` } : undefined}
+            className={'wx-progress-bar' + (acting || wx.percent < 0 ? ' indeterminate' : '')}
+            style={!acting && wx.percent >= 0 ? { width: `${wx.percent}%` } : undefined}
           />
         </div>
       )}
 
-      {!busy && (
-        <div className="inst-actions">
-          {offline ? (
-            <button className="btn btn-primary inst-act-wide" disabled={starting} onClick={onStart}>
-              {starting ? '启动中…' : inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
-            </button>
-          ) : (
-            <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : '需先下载安装微信'}>
-              进入实例
-            </button>
-          )}
-        </div>
-      )}
+      {/* 进行中（升级/重启/停止/下载）时隐藏所有操作，避免重复点击 */}
+      {!working && (
+        <>
+          <div className="inst-actions">
+            {offline ? (
+              <button className="btn btn-primary inst-act-wide" onClick={onStart}>
+                {inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
+              </button>
+            ) : (
+              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : '需先下载安装微信'}>
+                进入实例
+              </button>
+            )}
+          </div>
 
-      <div className="inst-admin-links">
-        {!busy && !offline && (
-          <button className="btn-text" onClick={() => onTrigger(inst, installed ? 'update' : 'install')}>
-            {installed ? '更新微信' : '下载安装'}
-          </button>
-        )}
-        <button className="btn-text" onClick={onRename}>
-          重命名
-        </button>
-        <button className="btn-text" onClick={onAssign}>
-          分配账户
-        </button>
-        <button className="btn-text danger" onClick={onDelete}>
-          删除
-        </button>
-      </div>
+          <div className="inst-admin-links">
+            {!offline && (
+              <button className="btn-text" onClick={() => onTrigger(inst, installed ? 'update' : 'install')}>
+                {installed ? '更新微信' : '下载安装'}
+              </button>
+            )}
+            <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留聊天记录），把实例更新到新版">
+              升级实例
+            </button>
+            {!offline && (
+              <button className="btn-text" onClick={onRestart}>
+                重启
+              </button>
+            )}
+            {!offline && (
+              <button className="btn-text" onClick={onStop}>
+                停止
+              </button>
+            )}
+            <button className="btn-text" onClick={onRename}>
+              重命名
+            </button>
+            <button className="btn-text" onClick={onAssign}>
+              分配账户
+            </button>
+            <button className="btn-text danger" onClick={onDelete}>
+              删除
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

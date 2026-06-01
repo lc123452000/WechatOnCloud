@@ -125,6 +125,26 @@ export async function ensureRunning(inst: Instance): Promise<void> {
   }
 }
 
+// 升级实例：拉取最新微信镜像后重建容器（保留数据卷 → 登录态不丢）。
+// 拉取失败（本地自构建 / 离线 / 仓库不可达）则用本地现有镜像重建，不阻断。
+export async function upgradeInstance(inst: Instance): Promise<void> {
+  try {
+    await pullImage();
+  } catch (e: any) {
+    console.warn('[docker] 升级时拉取镜像失败，改用本地镜像重建:', e?.message || e);
+  }
+  await runInstance(inst);
+}
+
+// 停止实例容器（保留容器与数据卷，可再启动）。
+export async function stopInstance(inst: Instance): Promise<void> {
+  try {
+    await docker.getContainer(inst.containerName).stop({ t: 5 } as any);
+  } catch {
+    /* 已停止或不存在 */
+  }
+}
+
 export async function removeInstance(inst: Instance, purgeVolume: boolean): Promise<void> {
   try {
     const c = docker.getContainer(inst.containerName);

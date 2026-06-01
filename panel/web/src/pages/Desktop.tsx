@@ -45,6 +45,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [control, setControl] = useState<{ free: boolean; mine: boolean; holder: string | null } | null>(null);
+  const [vncNonce, setVncNonce] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const dragDepth = useRef(0);
@@ -217,21 +218,39 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     }
   };
 
-  // 打开/收起 KasmVNC 原生控制条（音频/麦克风/摄像头/剪贴板/全屏/键盘设置都在里面）。
-  // noVNC 的 openControlbar 是给 #noVNC_control_bar 加 .noVNC_open（CSS 据此展开；手柄绑 mousedown，
-  // 合成 click 触发不了），所以直接切换 bar 上的该 class 最可靠。iframe 与面板同源，可直接访问其 DOM。
-  const openVncControls = () => {
+  // 桌面加载后给 noVNC 原生控制条注入"实心可见"样式：原生背景近纯黑半透明，叠在深色/黑屏上看不见。
+  // 注入后，用 KasmVNC 自带的左侧边缘手柄拉出控制条（音频/剪贴板/键盘/全屏等）时即可见。iframe 同源可直接访问。
+  const injectVncStyle = () => {
     try {
       const doc = frameRef.current?.contentDocument;
-      const bar = doc?.getElementById('noVNC_control_bar');
-      if (bar) {
-        bar.classList.toggle('noVNC_open');
-        focusFrame();
-      } else {
-        toast('控制条尚未就绪，请等画面出现后重试', 'error');
-      }
+      if (!doc || doc.getElementById('woc-vnc-style')) return;
+      const st = doc.createElement('style');
+      st.id = 'woc-vnc-style';
+      st.textContent =
+        '#noVNC_control_bar_anchor{z-index:2147483647!important;}' +
+        '#noVNC_control_bar{background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.55)!important;box-shadow:0 0 24px rgba(0,0,0,.55)!important;}' +
+        '#noVNC_control_bar_handle{opacity:1!important;background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.5)!important;}';
+      (doc.head || doc.documentElement).appendChild(st);
     } catch {
-      toast('无法打开 VNC 控制条', 'error');
+      /* 同源正常不会到这 */
+    }
+  };
+
+  const restartInstance = async () => {
+    const ok = await confirm({
+      title: '重启该实例？',
+      body: '会重建容器（聊天记录保留），微信重新启动，约十几秒；用于修复卡死/最小化丢失等。',
+      confirmText: '重启',
+    });
+    if (!ok) return;
+    try {
+      await api.instanceRestart(id);
+      toast('已重启，正在重连…', 'ok');
+      setFrameLoaded(false);
+      setVncNonce((n) => n + 1); // 强制 iframe 重挂、重连
+      await reload();
+    } catch (e: any) {
+      toast(e.message || '重启失败', 'error');
     }
   };
 
@@ -270,9 +289,6 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
         <span className="ws-title">{title}</span>
         {showVnc && (
           <>
-            <button className="ws-action" title="VNC 控制：音频 / 麦克风 / 摄像头 / 剪贴板 / 全屏 / 键盘" onClick={openVncControls}>
-              控制
-            </button>
             <button
               className="ws-action"
               title="文件传输"
@@ -283,6 +299,11 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             >
               文件
             </button>
+            {isAdmin && (
+              <button className="ws-action" title="重启实例（修复卡死/最小化丢失）" onClick={restartInstance}>
+                重启
+              </button>
+            )}
           </>
         )}
       </header>
@@ -330,7 +351,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       ) : (
         <div className="iv-stage">
           <iframe
-            key={id}
+            key={`${id}:${vncNonce}`}
             ref={frameRef}
             className="iv-frame"
             src={desktopUrl(id)}
@@ -338,7 +359,10 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={() => {
               setFrameLoaded(true);
-              setTimeout(focusFrame, 400); // 加载完把键盘焦点交给 VNC（宿主机输入法）
+              setTimeout(() => {
+                focusFrame(); // 加载完把键盘焦点交给 VNC（宿主机输入法）
+                injectVncStyle(); // 让原生控制条在深色背景下可见
+              }, 500);
             }}
           />
 
@@ -347,7 +371,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
               <div className="iv-loading-sub">首次进入请扫码登录微信</div>
-              <div className="iv-loading-sub">拖文件到此处即可上传；语音/视频/剪贴板点右上角「控制」开启</div>
+              <div className="iv-loading-sub">拖文件到此处即可上传；音频/剪贴板等在画面左侧边缘的工具条里</div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>
               )}

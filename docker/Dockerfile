@@ -14,7 +14,8 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
         curl ca-certificates locales dpkg \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
-        libnss3 libgbm1 libasound2 libxss1; \
+        libnss3 libgbm1 libasound2 libxss1 \
+        xdotool; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
     apt-get clean; \
@@ -72,9 +73,13 @@ RUN set -eux; \
 COPY wechat-ctl.sh /woc/wechat-ctl.sh
 RUN chmod +x /woc/wechat-ctl.sh
 
-# openbox 会话启动时执行此脚本：等待微信就绪 + 常驻拉起微信
+# openbox 会话启动时执行此脚本：等待微信就绪 + 常驻拉起微信 + 最小化自动复原看守
 COPY autostart /defaults/autostart
 RUN chmod +x /defaults/autostart
+
+# 启动钩子：每次启动用镜像内最新 autostart 覆盖数据卷旧副本（否则旧实例升级后用不上新逻辑）
+COPY woc-update-autostart /custom-cont-init.d/01-woc-autostart
+RUN chmod +x /custom-cont-init.d/01-woc-autostart
 
 # 3000 = HTTP web 客户端, 3001 = HTTPS
 EXPOSE 3000 3001

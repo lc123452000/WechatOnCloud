@@ -29,6 +29,10 @@ export default defineConfig({
       workbox: {
         // 桌面反代与 API 不能被 SW 拦截
         navigateFallbackDenylist: [/^\/desktop/, /^\/api/],
+        // 新版本立即接管 + 清理旧缓存，避免更新后仍跑旧代码（硬刷新绕不过 SW）
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],

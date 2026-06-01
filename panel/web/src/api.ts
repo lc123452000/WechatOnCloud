@@ -90,6 +90,9 @@ export const api = {
   instanceWechatInstall: (id: string) => req(`/api/admin/instances/${id}/wechat/install`, { method: 'POST' }),
   instanceWechatUpdate: (id: string) => req(`/api/admin/instances/${id}/wechat/update`, { method: 'POST' }),
   instanceStart: (id: string) => req(`/api/admin/instances/${id}/start`, { method: 'POST' }),
+  instanceStop: (id: string) => req(`/api/admin/instances/${id}/stop`, { method: 'POST' }),
+  instanceRestart: (id: string) => req(`/api/admin/instances/${id}/restart`, { method: 'POST' }),
+  instanceUpgrade: (id: string) => req(`/api/admin/instances/${id}/upgrade`, { method: 'POST' }),
 
   // 文件中转
   listFiles: (id: string) => req<{ files: { name: string; size: number }[] }>(`/api/instances/${id}/files`),
