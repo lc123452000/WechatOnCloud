@@ -409,14 +409,14 @@ WechatOnCloud/
 
 也感谢每一位 Star / Issue / PR 的朋友——**两天突破 500 ⭐**，是继续打磨的最大动力 🙌
 
-## Star 趋势
+## Star History
 
-<a href="https://star-history.com/#Gloridust/WechatOnCloud&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Gloridust/WechatOnCloud&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Gloridust/WechatOnCloud&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Gloridust/WechatOnCloud&type=Date" />
-  </picture>
+<a href="https://www.star-history.com/?repos=Gloridust%2FWechatOnCloud&type=date&logscale=&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Gloridust/WechatOnCloud&type=date&theme=dark&logscale&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Gloridust/WechatOnCloud&type=date&logscale&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Gloridust/WechatOnCloud&type=date&logscale&legend=top-left" />
+ </picture>
 </a>
 
 ---
