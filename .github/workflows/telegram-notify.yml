@@ -1,0 +1,69 @@
+name: telegram-notify
+
+# 通过 Telegram Bot(@WechatOnCloudBot)把「新版本发布 / 新 issue」推送到群组。
+# 跑在 GitHub Actions 上，无需任何服务器。
+#
+# 一次性配置（未配置则自动跳过，不影响 fork）：
+#   1) 把 @WechatOnCloudBot 拉进目标群组（群里发言需要时设为管理员）。
+#   2) 取群组 chat id：把 bot 拉进群后在群里随便发条消息，浏览器打开
+#      https://api.telegram.org/bot<BOT_TOKEN>/getUpdates ，找 result[].message.chat.id
+#      （群组通常是形如 -1001234567890 的负数）。
+#   3) 仓库 Settings → Secrets and variables → Actions：
+#        · Variables 选项卡 → 新建 TELEGRAM_CHAT_ID = 上面的 chat id
+#        · Secrets   选项卡 → 新建 TELEGRAM_BOT_TOKEN = @BotFather 给的 bot token
+#      （chat id 放 Variable 是为了能在下面的 if 条件里判断是否已配置；token 必须放 Secret。）
+
+on:
+  release:
+    types: [published]
+  issues:
+    types: [opened]
+
+# 限制权限：只读元数据，足够本工作流所需。
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # 仅当配置了群组 chat id 时才运行（未配置的 fork 会安全跳过）
+    if: ${{ vars.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Compose & send Telegram message
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ vars.TELEGRAM_CHAT_ID }}
+          EVENT: ${{ github.event_name }}
+          # 经 env 传入任意文本，避免把 ${{ }} 直接拼进脚本造成命令注入
+          R_TAG: ${{ github.event.release.tag_name }}
+          R_NAME: ${{ github.event.release.name }}
+          R_URL: ${{ github.event.release.html_url }}
+          R_BODY: ${{ github.event.release.body }}
+          I_NUM: ${{ github.event.issue.number }}
+          I_TITLE: ${{ github.event.issue.title }}
+          I_URL: ${{ github.event.issue.html_url }}
+          I_USER: ${{ github.event.issue.user.login }}
+          I_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TG_TOKEN:-}" ]; then
+            echo "::warning::TELEGRAM_BOT_TOKEN 未配置，跳过"
+            exit 0
+          fi
+          if [ "$EVENT" = "release" ]; then
+            title="🚀 云微 WechatOnCloud ${R_TAG} 已发布"
+            if [ -n "${R_NAME:-}" ] && [ "${R_NAME}" != "${R_TAG}" ]; then
+              title="${title} — ${R_NAME}"
+            fi
+            # 发布说明截断到 ~3000 字符（Telegram 单条上限 4096）
+            body="$(printf '%s' "${R_BODY:-}" | head -c 3000)"
+            msg="$(printf '%s\n\n%s\n\n🔗 完整说明：%s\n⬆️ 升级： docker compose pull && docker compose up -d' "$title" "$body" "$R_URL")"
+          else
+            body="$(printf '%s' "${I_BODY:-}" | head -c 600)"
+            msg="$(printf '🐛 新反馈 Issue #%s：%s\n👤 by %s\n\n%s\n\n🔗 %s' "$I_NUM" "$I_TITLE" "$I_USER" "$body" "$I_URL")"
+          fi
+          # --data-urlencode 负责转义，纯文本发送（不用 markdown parse_mode，避免特殊字符破坏解析）
+          curl -sS --fail-with-body -X POST \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${msg}"
