@@ -26,6 +26,24 @@ export const APP_LABELS: Record<AppType, string> = {
   chromium: 'Chromium',
   custom: '自定义应用',
 };
+
+// 各应用的 UI 画像，供卡片/桌面页按类型显示正确文案（避免到处写死「微信」）。
+//   needsInstall: 是否需要运行时下载安装（微信/Telegram 是；Chromium 已烤进镜像、即创建即就绪）。
+//   enterHint:    首次进入实例的提示。
+//   updateLabel:  「管理」菜单里的更新按钮文案（needsInstall=false 时不显示）。
+export interface AppProfile {
+  label: string;
+  needsInstall: boolean;
+  enterHint: string;
+  updateLabel: string;
+}
+export const APP_PROFILES: Record<AppType, AppProfile> = {
+  wechat: { label: '微信', needsInstall: true, enterHint: '首次进入请扫码登录微信', updateLabel: '更新微信' },
+  telegram: { label: 'Telegram', needsInstall: true, enterHint: '首次进入请登录 Telegram', updateLabel: '更新 Telegram' },
+  chromium: { label: 'Chromium', needsInstall: false, enterHint: '浏览器已就绪，直接使用即可', updateLabel: '' },
+  custom: { label: '自定义应用', needsInstall: true, enterHint: '', updateLabel: '更新' },
+};
+export const appProfile = (t?: AppType): AppProfile => APP_PROFILES[t ?? 'wechat'] ?? APP_PROFILES.wechat;
 export interface PanelInstance {
   id: string;
   name: string;

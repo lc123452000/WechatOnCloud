@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, APP_LABELS, type PanelUser, type InstanceWithStatus, type VolEntry, type AppType } from '../api';
+import { api, APP_LABELS, appProfile, type PanelUser, type InstanceWithStatus, type VolEntry, type AppType } from '../api';
 import { useUI, PasswordInput } from '../ui';
 import { useAuth } from '../auth';
 
@@ -271,7 +271,7 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
         {isAdmin && (
           <>
             <div className="section-row">
-              <span className="section-title">微信实例</span>
+              <span className="section-title">实例</span>
               <button className="btn-text" onClick={() => setCreatingInst(true)}>
                 + 新建实例
               </button>
@@ -279,11 +279,11 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
             {instances.length === 0 ? (
               <EmptyState
                 icon="🖥️"
-                title="还没有微信实例"
-                sub="新建一个实例，进入后扫码登录即可在浏览器里用微信"
+                title="还没有实例"
+                sub="新建一个实例（微信 / Chromium 浏览器），进入后即可在浏览器里使用"
                 action={
                   <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
-                    ＋ 新建微信实例
+                    ＋ 新建实例
                   </button>
                 }
               />
@@ -899,6 +899,8 @@ function InstanceAdminCard({
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [menuOpen]);
 
+  const profile = appProfile(inst.appType);
+
   let badge: { text: string; cls: string };
   if (acting) badge = { text: '处理中', cls: 'tag-busy' };
   else if (offline) badge = { text: inst.runtime === 'missing' ? '未创建' : '已停止', cls: 'tag-off' };
@@ -911,8 +913,8 @@ function InstanceAdminCard({
   else if (busy) sub = wx.percent >= 0 ? `${wx.message || '处理中'} ${wx.percent}%` : wx.message || '请稍候…';
   else if (wx.phase === 'error') sub = wx.message || '操作失败，可重试';
   else if (offline) sub = inst.runtime === 'missing' ? '容器尚未创建' : '容器已停止';
-  else if (installed) sub = wx.version ? `微信 ${wx.version}` : '微信已安装';
-  else sub = '微信尚未安装';
+  else if (installed) sub = wx.version ? `${profile.label} ${wx.version}` : `${profile.label}已就绪`;
+  else sub = `${profile.label}尚未安装`;
 
   return (
     <div className={'inst-card' + (menuOpen ? ' open-menu' : '')}>
@@ -943,7 +945,7 @@ function InstanceAdminCard({
                 {inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
               </button>
             ) : (
-              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : '需先下载安装微信'}>
+              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : '需先下载安装' + profile.label}>
                 进入实例
               </button>
             )}
@@ -960,9 +962,9 @@ function InstanceAdminCard({
               <div className="inst-menu-group">
                 <div className="inst-menu-label">运维</div>
                 <div className="inst-menu-items">
-                  {!offline && (
+                  {!offline && profile.needsInstall && (
                     <button className="btn-text" onClick={() => onTrigger(inst, installed ? 'update' : 'install')}>
-                      {installed ? '更新微信' : '下载安装'}
+                      {installed ? profile.updateLabel : '下载安装'}
                     </button>
                   )}
                   <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留聊天记录）">

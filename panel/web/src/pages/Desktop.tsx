@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, appProfile } from '../api';
 import { useUI } from '../ui';
 import { useAuth } from '../auth';
 import { useInstances } from '../AppShell';
@@ -150,6 +150,8 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   const audioRef = useRef<VncAudio | null>(null);
 
   const inst = instances.find((i) => i.id === id);
+  const profile = appProfile(inst?.appType); // 按应用类型显示正确文案（微信/Chromium…）
+  const appLabel = profile.label;
   // 进入实例时，共享列表可能尚未同步（管理页新建/安装后），先按"探测中"显示加载态，
   // 等列表刷新到该实例或超时后再判定是否真的不存在，避免从管理页跳转时误报"实例不存在"。
   const [probing, setProbing] = useState(true);
@@ -366,7 +368,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     }
     setUploading(false);
     if (ok) {
-      toast(`已上传 ${ok} 个文件到桌面，微信里可直接选取`, 'ok');
+      toast(`已上传 ${ok} 个文件到桌面，应用里可直接取用`, 'ok');
       refreshFiles();
     }
   };
@@ -379,7 +381,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   };
 
   const delFile = async (name: string) => {
-    if (!(await confirm({ title: `删除「${name}」？`, body: '将从微信桌面（~/Desktop）移除该文件。', danger: true, confirmText: '删除' }))) return;
+    if (!(await confirm({ title: `删除「${name}」？`, body: '将从桌面（~/Desktop）移除该文件。', danger: true, confirmText: '删除' }))) return;
     try {
       await api.deleteFile(id, name);
       toast('已删除', 'ok');
@@ -445,7 +447,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       return;
     }
     if (pushClipboardToRemote(t)) {
-      toast('已发送到容器剪贴板，请在微信输入框按 Ctrl+V 粘贴', 'ok');
+      toast('已发送到容器剪贴板，请在应用输入框按 Ctrl+V 粘贴', 'ok');
     } else {
       toast('发送失败：桌面尚未连接', 'error');
     }
@@ -486,7 +488,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   const restartInstance = async () => {
     const ok = await confirm({
       title: '重启该实例？',
-      body: '会重建容器（聊天记录保留），微信重新启动，约十几秒；用于修复卡死/最小化丢失等。',
+      body: `会重建容器（数据保留），${appLabel}重新启动，约十几秒；用于修复卡死/最小化丢失等。`,
       confirmText: '重启',
     });
     if (!ok) return;
@@ -525,7 +527,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     }
   };
 
-  const title = inst?.name || '微信实例';
+  const title = inst?.name || '实例';
 
   return (
     <div className="ws-page">
@@ -550,8 +552,8 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
               className={'ws-action' + (inputMode === 'seamless' ? ' on' : '')}
               title={
                 inputMode === 'seamless'
-                  ? '无感输入：直接在微信输入框里打中文（提交后转发，已修复混数字丢字）。点击切回「转发输入条」'
-                  : '转发输入：用底部输入条打中文，最稳。点击切到「无感输入」（直接在微信里打）'
+                  ? '无感输入：直接在应用输入框里打中文（提交后转发，已修复混数字丢字）。点击切回「转发输入条」'
+                  : '转发输入：用底部输入条打中文，最稳。点击切到「无感输入」（直接在应用里打）'
               }
               onClick={() => setMode(inputMode === 'seamless' ? 'forward' : 'seamless')}
             >
@@ -609,7 +611,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
         <div className="iv-stage iv-center">
           <div className="iv-notice">
             <div className="spinner" />
-            <div className="iv-notice-title">微信安装中…</div>
+            <div className="iv-notice-title">{appLabel}安装中…</div>
             <div className="iv-notice-sub">
               {inst.wechat.message || '请稍候'}
               {inst.wechat.percent >= 0 ? ` · ${inst.wechat.percent}%` : ''} ——完成后自动进入，无需刷新
@@ -619,18 +621,18 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       ) : !installed ? (
         <div className="iv-stage iv-center">
           <div className="iv-notice">
-            <div className="iv-notice-title">{inst.wechat.phase === 'error' ? '微信安装出错' : '微信尚未安装'}</div>
+            <div className="iv-notice-title">{inst.wechat.phase === 'error' ? `${appLabel}安装出错` : `${appLabel}尚未安装`}</div>
             <div className="iv-notice-sub">
               {inst.wechat.phase === 'error'
                 ? inst.wechat.message || '安装失败，可在「管理」重试'
-                : '该实例容器已就绪，但尚未安装微信'}
+                : `该实例容器已就绪，但尚未安装${appLabel}`}
             </div>
             {isAdmin ? (
               <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
                 去「管理」{inst.wechat.phase === 'error' ? '重试 / 更新' : '下载安装'}
               </button>
             ) : (
-              <div className="iv-notice-sub">请联系管理员在「管理」中下载安装微信</div>
+              <div className="iv-notice-sub">请联系管理员在「管理」中下载安装{appLabel}</div>
             )}
             {isAdmin && (
               <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
@@ -647,7 +649,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             ref={frameRef}
             className="iv-frame"
             src={desktopUrl(id)}
-            title="电脑版微信"
+            title={`${appLabel} · 实例桌面`}
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={() => {
               setFrameLoaded(true);
@@ -664,7 +666,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             <div className="iv-loading">
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
-              <div className="iv-loading-sub">首次进入请扫码登录微信</div>
+              <div className="iv-loading-sub">{profile.enterHint}</div>
               <div className="iv-loading-sub">拖文件到此处即可上传；声音自动开启，点一下画面即可出声</div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>
@@ -703,8 +705,8 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             <div className="iv-drop" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
               <div className="drop-card">
                 <div className="drop-icon">⬇</div>
-                <div className="drop-title">松开上传到微信桌面</div>
-                <div className="drop-sub">上传后在微信里「+ / 文件」选择即可</div>
+                <div className="drop-title">松开上传到桌面</div>
+                <div className="drop-sub">上传后在应用里「+ / 文件」选择即可</div>
               </div>
             </div>
           )}
@@ -742,7 +744,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
               <button className="btn btn-primary files-upload" disabled={uploading} onClick={() => fileInput.current?.click()}>
                 {uploading ? '上传中…' : '＋ 选择文件上传'}
               </button>
-              <div className="files-hint">也可直接把文件拖进来。下方为桌面（~/Desktop）里的文件，微信收到的文件另存到桌面即可在此下载。</div>
+              <div className="files-hint">也可直接把文件拖进来。下方为桌面（~/Desktop）里的文件，应用收到的文件另存到桌面即可在此下载。</div>
               <div className="files-list">
                 {files.length === 0 && (
                   <div className="muted small" style={{ padding: '10px 2px' }}>
@@ -776,17 +778,17 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                 className="clip-area"
                 value={clipText}
                 onChange={(e) => setClipText(e.target.value)}
-                placeholder="在此输入或粘贴文本，点「发送到微信」后到微信输入框按 Ctrl+V 粘贴"
+                placeholder="在此输入或粘贴文本，点「发送到剪贴板」后到应用输入框按 Ctrl+V 粘贴"
                 rows={5}
               />
               <button className="btn btn-primary files-upload" onClick={sendClip}>
-                发送到微信（容器剪贴板）
+                发送到剪贴板
               </button>
               <button className="btn-text" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={pullClipboardFromRemote}>
                 ↓ 读取容器剪贴板到此框
               </button>
               <div className="files-hint">
-                局域网 http 访问时浏览器会禁用系统级剪贴板同步，故用此框中转：文本→容器剪贴板，再在微信里 Ctrl+V。
+                局域网 http 访问时浏览器会禁用系统级剪贴板同步，故用此框中转：文本→容器剪贴板，再在应用里 Ctrl+V。
               </div>
             </div>
           )}
@@ -804,7 +806,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                     sendImeText();
                   }
                 }}
-                placeholder="中文输入这里 → 回车送进微信（先点好微信的输入框）。Shift+回车换行。"
+                placeholder="中文输入这里 → 回车送进应用（先点好应用的输入框）。Shift+回车换行。"
                 rows={1}
               />
               <button
