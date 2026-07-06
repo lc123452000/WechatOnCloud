@@ -321,13 +321,25 @@ export async function ensureRunning(inst: Instance): Promise<void> {
 // skipPull：批量升级时由调用方先统一拉取一次，避免 N 个实例拉 N 次（受限网络下每次
 // 都要等到拉取停滞超时，表现为"一键升级卡死"）。
 export async function upgradeInstance(inst: Instance, opts?: { skipPull?: boolean }): Promise<void> {
+  let pullErr: any = null;
   if (!opts?.skipPull) {
     try {
       await pullImage();
     } catch (e: any) {
+      pullErr = e;
       console.warn('[docker] 升级时拉取镜像失败，改用本地镜像重建:', e?.message || e);
     }
   }
+  // 记录升级前镜像，用于事后判断"升级是否真的换了镜像"（issue #112：拉取失败静默回退旧镜像，
+  // 用户被告知"完成"、实际什么都没变，且无从自查）。
+  const before = await (async () => {
+    try {
+      const info: any = await docker.getContainer(inst.containerName).inspect();
+      return String(info.Image || '');
+    } catch {
+      return '';
+    }
+  })();
   // 升级不改变用户的运行状态：原本停止的实例，升级（重建）后停回去，而不是悄悄拉起。
   const wasStopped = (await instanceRuntime(inst)) === 'stopped';
   await runInstance(inst);
@@ -338,6 +350,26 @@ export async function upgradeInstance(inst: Instance, opts?: { skipPull?: boolea
     } catch {
       /* 停不回去也不算失败 */
     }
+  }
+  const after = await (async () => {
+    try {
+      const info: any = await docker.getContainer(inst.containerName).inspect();
+      return String(info.Image || '');
+    } catch {
+      return '';
+    }
+  })();
+  if (pullErr && before && after === before) {
+    // 诚实汇报：拉取失败且镜像未变 = 这次"升级"没有升级任何东西。抛错让调用方按失败处理，
+    // 用户才知道要去解决网络/镜像源问题，而不是误以为已修复。
+    throw new Error(
+      `拉取新镜像失败（${pullErr?.message || pullErr}），实例仍在原镜像上重建（未升级）。请检查网络/镜像源后重试`,
+    );
+  }
+  if (before && after !== before) {
+    appendInstanceLog(inst.id, `镜像已更换：${before.slice(7, 19)} → ${after.slice(7, 19)}`);
+  } else if (!pullErr) {
+    appendInstanceLog(inst.id, '镜像已是最新，无需更换');
   }
 }
 
@@ -541,6 +573,27 @@ export async function instanceOutdated(inst: Instance, latestId: string | null):
     return !!cur && cur !== latestId;
   } catch {
     return false; // 容器不存在（未创建/已删）→ 不算落后
+  }
+}
+
+// 实例容器当前运行镜像的版本号（CI 打的 org.opencontainers.image.version label，如 "1.4.0"）。
+// 本地自构建镜像无该 label → 返回镜像短 id（显示为"自构建 xxxx"级别信息）；容器不存在 → null。
+// 背景（issue #112）：用户无从得知实例到底跑的哪版镜像，"以为升级了其实没有"无法自查。
+export async function instanceImageVersion(inst: Instance): Promise<string | null> {
+  try {
+    const info: any = await docker.getContainer(inst.containerName).inspect();
+    const imgId = String(info.Image || '');
+    if (!imgId) return null;
+    try {
+      const img: any = await docker.getImage(imgId).inspect();
+      const v = img?.Config?.Labels?.['org.opencontainers.image.version'];
+      if (v) return String(v);
+    } catch {
+      /* 镜像记录不可读（containerd 快照残留），退回短 id */
+    }
+    return imgId.replace(/^sha256:/, '').slice(0, 12);
+  } catch {
+    return null;
   }
 }
 

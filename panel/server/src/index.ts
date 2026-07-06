@@ -50,6 +50,7 @@ import {
   remoteInstanceImageNewer,
   removeInstance as removeInstanceContainer,
   instanceRuntime,
+  instanceImageVersion,
   triggerWechat,
   wechatStatus,
   instanceTarget,
@@ -348,8 +349,12 @@ app.get('/api/instances', async (req, reply) => {
   const out = await Promise.all(
     visible.map(async (pub) => {
       const inst = findInstance(pub.id)!;
-      const [runtime, wx] = await Promise.all([instanceRuntime(inst), wechatStatus(inst)]);
-      return { ...pub, runtime, wechat: wx };
+      const [runtime, wx, imageVersion] = await Promise.all([
+        instanceRuntime(inst),
+        wechatStatus(inst),
+        instanceImageVersion(inst), // 实例镜像版本（CI label；自构建为短 id）——让用户能自查"到底跑的哪版"
+      ]);
+      return { ...pub, runtime, wechat: wx, imageVersion };
     }),
   );
   return { instances: out };

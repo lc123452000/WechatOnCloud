@@ -1285,6 +1285,14 @@ function InstanceAdminCard({
             可升级
           </span>
         )}
+        {inst.imageVersion && (
+          <span
+            className="tag tag-muted"
+            title={/^\d+\.\d+\.\d+$/.test(inst.imageVersion) ? '该实例当前运行的镜像版本' : '本地自构建镜像（无发布版本号，显示镜像短 id）'}
+          >
+            镜像 {/^\d+\.\d+\.\d+$/.test(inst.imageVersion) ? `v${inst.imageVersion}` : inst.imageVersion.slice(0, 8)}
+          </span>
+        )}
       </div>
       <div className="inst-sub">
         {sub}
