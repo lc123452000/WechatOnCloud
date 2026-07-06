@@ -8,7 +8,19 @@ FROM lscr.io/linuxserver/baseimage-kasmvnc:debianbookworm
 # 需的全部系统库（这些需 root/apt，必须 bake 进镜像）。
 ENV DEBIAN_FRONTEND=noninteractive
 
+# ⚠️ Chromium 版本锚定（架构守则 R1）——绝不跟随 Debian 滚动：
+# Debian 源只保留最新版 chromium，而新版本在本容器栈（KasmVNC/Xvnc + 软件渲染）上反复引入致命崩溃：
+#   · 149 收紧变换矩阵断言（叠加 DPI bug 全面崩溃，v1.4.0 已修 DPI）；
+#   · 150 「非首次启动」路径与 --start-maximized 直接 SIGTRAP → 浏览器实例必黑屏（无任何 flag 可绕）。
+# 故从 snapshot.debian.org 的固定快照安装验证过的版本。升级 chromium = 显式改下面两行（快照时间戳 +
+# 版本号），并跑通 doc/dev/发布门禁.md 的全部探针后才允许合并。
+ARG CHROMIUM_SNAPSHOT=20260704T180435Z
+ARG CHROMIUM_VERSION=149.0.7827.196-1~deb12u1
 RUN set -eux; \
+    echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${CHROMIUM_SNAPSHOT}/ bookworm-security main" \
+      > /etc/apt/sources.list.d/woc-chromium-pin.list; \
+    printf 'Package: chromium*\nPin: version %s\nPin-Priority: 1001\n' "${CHROMIUM_VERSION}" \
+      > /etc/apt/preferences.d/woc-chromium-pin; \
     # 中文字体（否则界面/消息显示方块）+ 语言环境 + 下载/解压工具
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -16,9 +28,10 @@ RUN set -eux; \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
         xz-utils \
-        chromium \
+        chromium="${CHROMIUM_VERSION}" \
         xdotool xclip \
         xwallpaper xsettingsd; \
+    chromium --version; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
     apt-get clean; \

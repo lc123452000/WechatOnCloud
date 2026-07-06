@@ -148,7 +148,8 @@ function AboutSection({ isAdmin }: { isAdmin: boolean }) {
         .upgradeStatus()
         .then((s) => {
           setOutdatedInst(s.outdatedCount);
-          setRemoteNewer(s.remoteNewer === true);
+          // 没有任何实例时不提示"实例镜像有新版"（全新安装的噪音）
+          setRemoteNewer(s.remoteNewer === true && s.instances.length > 0);
         })
         .catch(() => {});
   }, [isAdmin]);

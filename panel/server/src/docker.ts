@@ -6,7 +6,21 @@ import zlib from 'node:zlib';
 import Docker from 'dockerode';
 import { instanceAppType, getDesktopDark, type Instance } from './store.js';
 
-const WECHAT_IMAGE = process.env.WOC_WECHAT_IMAGE || 'ghcr.io/gloridust/wechat-on-cloud:latest';
+// 实例镜像引用。版本耦合（架构守则 R1）：面板与实例镜像同一 release 同步出包、按同版本号
+// 互相验证——正式版面板把 :latest 改写为与自身相同的版本 tag（如 1.4.1），保证
+// 「面板 vX 管的实例镜像也是 vX」，杜绝旧面板拉到新实例镜像（或反之）产生未验证组合。
+// 用户在 env 显式指定了非 latest tag（自行锁版）则完全尊重；开发版面板（dev-*）保持 latest。
+function resolveWechatImage(): string {
+  const raw = process.env.WOC_WECHAT_IMAGE || 'ghcr.io/gloridust/wechat-on-cloud:latest';
+  const ver = (process.env.WOC_VERSION || '').trim().replace(/^v/, '');
+  if (!/^\d+\.\d+\.\d+$/.test(ver)) return raw; // 开发版/未知版本 → 保持原样
+  const noDigest = raw.split('@')[0];
+  const m = noDigest.match(/^(.*):([^/:]+)$/);
+  if (m && m[2] !== 'latest') return raw; // 用户显式锁了别的 tag → 尊重
+  const repo = m ? m[1] : noDigest;
+  return `${repo}:${ver}`;
+}
+const WECHAT_IMAGE = resolveWechatImage();
 const PUID = process.env.PUID || '1000';
 const PGID = process.env.PGID || '1000';
 const TZ = process.env.TZ || 'Asia/Shanghai';
@@ -559,16 +573,19 @@ export function remoteInstanceImageNewer(): boolean | null {
 }
 
 async function checkRemoteImageNewer(): Promise<boolean | null> {
+  const ref = parseImageRef(WECHAT_IMAGE);
+  if (!ref) return null;
   let local: any;
   try {
     local = await docker.getImage(WECHAT_IMAGE).inspect();
   } catch {
-    return null; // 本地还没有镜像：首次拉取走 ensureImage 流程，不在这里打扰
+    // 本地没有该镜像。版本耦合后这是常态：面板刚自更新到 vX，本地还只有旧版镜像、没有 :vX 的 tag。
+    // 只要远端确实存在该镜像（digest 可取）就视为「有新版可拉取」，让升级引导亮起（一键升级会先拉取）。
+    const remote = await fetchManifestDigest(ref);
+    return remote ? true : null;
   }
   const repoDigests: string[] = local.RepoDigests || [];
   if (!repoDigests.length) return null; // 本地自构建（无 registry 来源）→ 无从比较，不打扰
-  const ref = parseImageRef(WECHAT_IMAGE);
-  if (!ref) return null;
   const remote = await fetchManifestDigest(ref);
   if (!remote) return null;
   return !repoDigests.some((d) => d.endsWith('@' + remote));
