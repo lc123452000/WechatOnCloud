@@ -15,9 +15,20 @@
 // 也就不需要"进群后删广告 / 禁言 / 移除"那一整套事后补救。
 //
 // 流程：chat_join_request → 私聊出一道加法题（选择题按钮）→ 答对 approve、连错 3 次 decline。
-// 关键前提（已查官方文档确认）：ChatJoinRequest.user_chat_id 允许机器人在【24 小时】内私聊该用户，
-// 远大于 cron 的 5~15 分钟延迟，所以本方案在 Actions 上成立。
 // 无状态：正确答案与已答错次数全部编码进按钮的 callback_data，不需要任何持久化存储。
+//
+// ⚠️ 已知限制（官方文档原文核对过，别再想当然）：
+//   ChatJoinRequest.user_chat_id —— "The bot can use this identifier for 5 minutes to send
+//   messages until the join request is processed"，即【只有 5 分钟】能私聊该用户。
+//   （更新本身在服务器保留 24h，那是另一回事，别混淆——我就混过一次。）
+//   而 GitHub cron 最小 5 分钟且常再延后 10~15 分钟 → 轮询模式下验证码【大概率发不出去】。
+//
+//   安全性不受影响：发不出去时用户仍卡在待批准，进不了群也发不了消息，只是退化成人工审批。
+//   故私聊失败时【绝不自动拒绝】，留给管理员人工处理，避免误伤真人。
+//
+//   要让验证码真正送达，必须让机器人近实时地收到更新，两条路：
+//     a) 改 webhook（Cloudflare Workers / Deno Deploy 等，免费且常驻，本文件逻辑可直接复用）
+//     b) 自托管长轮询（getUpdates timeout=50 常驻进程，NAS 上跑个小容器即可，无需公网端点）
 //
 // 需要：机器人是群管理员且有 can_invite_users 权限（否则收不到 chat_join_request）。
 
@@ -164,8 +175,13 @@ async function onJoinRequest(r) {
   const { q, markup } = captchaKeyboard(chatId, userId, 0);
   const res = await tg('sendMessage', { chat_id: dm, text: captchaText(q, 0), reply_markup: markup });
   if (!res.ok) {
-    // 私聊发不出去（用户屏蔽了机器人 / 超窗口）——不自动拒绝，留给管理员人工处理，避免误伤
-    console.log(`captcha DM 失败 user=${userId}: ${res.description}`);
+    // 最常见原因：距离入群申请已超过 5 分钟的私聊窗口（轮询模式下这是常态，不是偶发）。
+    // 也可能是用户屏蔽了机器人。一律【不自动拒绝】，留给管理员人工处理，避免误伤真人。
+    console.log(
+      `⚠️ 验证码私聊失败 user=${userId}: ${res.description}\n` +
+        `   多半是超过了 user_chat_id 的 5 分钟窗口（cron 延迟所致）。该用户仍处于待批准状态，` +
+        `进不了群，需要管理员在 Telegram 里手动批准/拒绝。`,
+    );
   }
 }
 
