@@ -1,7 +1,8 @@
 name: telegram-bot
 
-# Telegram 命令机器人（轮询版）——无需服务器，仅靠 GitHub Actions cron。
-# 私聊 / 群组都可用命令查询：/help /releases /release <tag> /issues /issue <编号>。
+# Telegram 机器人（轮询版）——无需服务器，仅靠 GitHub Actions cron。
+#   1) 命令查询：/help /releases /release <tag> /issues /issue <编号>（私聊 / 群组均可）
+#   2) 入群验证（反广告）：新成员需答对一道加法题才放行
 #
 # 启用（一次性）：
 #   1) 已配置 telegram-notify 用到的 TELEGRAM_BOT_TOKEN（Secret）即可复用；
@@ -9,7 +10,14 @@ name: telegram-bot
 #        TELEGRAM_BOT_ENABLED = true     （未设为 true 则本工作流不运行，避免空跑）
 #   3) 把机器人拉进群组 / 在私聊里 /start。
 #
-# 局限：cron 最小 5 分钟且可能再延后 → 命令非实时；GitHub 会在仓库 60 天无活动时暂停定时任务。
+# 启用入群验证还需（缺一不可）：
+#   a) 群组设为「新成员需管理员批准」（群设置 → 邀请链接勾选 Request Admin Approval）；
+#   b) 机器人是群管理员且有 can_invite_users 权限 —— 否则收不到 chat_join_request 更新。
+#   为什么这样就不怕 cron 有延迟：待批准的用户看不到群、也发不了消息，晚几分钟处理没有风险；
+#   而 ChatJoinRequest.user_chat_id 允许机器人在 24 小时内私聊该用户，远大于 cron 延迟。
+#
+# 局限：cron 最小 5 分钟且可能再延后 → 命令与验证码送达非实时（安全性不受影响，只影响体验）；
+# GitHub 会在仓库 60 天无活动时暂停定时任务。
 # 想立即处理一次：Actions → telegram-bot → Run workflow（workflow_dispatch）。
 
 on:
